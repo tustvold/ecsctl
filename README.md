@@ -6,6 +6,7 @@ A CLI tool to make working with ECS slightly less painful.
 
 This tooling makes some assumptions about your local setup.
 
+* You have configured your ECS cluster as described [here](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html#ecs-exec-prerequisites)
 * You have an installation of the AWS CLI
 * You have installed the AWS session manager plugin - see [here](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 

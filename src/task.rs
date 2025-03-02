@@ -165,6 +165,51 @@ impl Args {
                     child.kill().await?;
                 }
             }
+            Operation::Exec(args) => {
+                let resp = client
+                    .describe_tasks()
+                    .cluster(&self.cluster)
+                    .tasks(&args.task)
+                    .send()
+                    .await?;
+
+                let tasks = resp.tasks.unwrap_or_default();
+                if tasks.is_empty() {
+                    return Err(Error::msg("Task not found"));
+                }
+                let task = tasks.into_iter().next().unwrap();
+                let containers = task.containers.unwrap_or_default();
+
+                let runtime_id = containers
+                    .iter()
+                    .find(|x| x.name.as_deref().unwrap_or_default() == &args.container)
+                    .ok_or_else(|| Error::msg("container not found"))?
+                    .runtime_id
+                    .as_deref()
+                    .ok_or_else(|| Error::msg("missing runtime id"))?;
+
+                let target = format!("ecs:{}_{}_{}", self.cluster, args.task, runtime_id);
+
+                println!("Exec target: {target}");
+
+                let mut child = tokio::process::Command::new("aws")
+                    .arg("ssm")
+                    .arg("start-session")
+                    .arg("--target")
+                    .arg(&target)
+                    .spawn()?;
+
+                // We supress CTRL+C as it can result in leaking the SSM session
+                loop {
+                    tokio::select! {
+                        _ = child.wait() => {
+                            println!("Session Finished");
+                            break;
+                        }
+                        _ = tokio::signal::ctrl_c() => println!("\nExit session using CTRL-D"),
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -175,6 +220,7 @@ enum Operation {
     List,
     Get(GetArgs),
     PortForward(PortForwardArgs),
+    Exec(ExecArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -198,4 +244,13 @@ struct PortForwardArgs {
 
     #[clap(long)]
     port: Vec<String>,
+}
+
+#[derive(clap::Args, Debug)]
+struct ExecArgs {
+    #[clap(long)]
+    task: String,
+
+    #[clap(long)]
+    container: String,
 }
