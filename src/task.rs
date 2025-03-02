@@ -104,6 +104,67 @@ impl Args {
                     println!("{table}");
                 }
             },
+            Operation::PortForward(args) => {
+                if args.port.is_empty() {
+                    return Err(Error::msg("no port specified"));
+                }
+
+                let resp = client
+                    .describe_tasks()
+                    .cluster(&self.cluster)
+                    .tasks(&args.task)
+                    .send()
+                    .await?;
+
+                let tasks = resp.tasks.unwrap_or_default();
+                if tasks.is_empty() {
+                    return Err(Error::msg("Task not found"));
+                }
+                let task = tasks.into_iter().next().unwrap();
+                let containers = task.containers.unwrap_or_default();
+
+                let runtime_id = match containers.iter().find(|x| x.exit_code.is_none()) {
+                    Some(container) => container
+                        .runtime_id
+                        .clone()
+                        .ok_or_else(|| Error::msg("missing runtime id"))?,
+                    None => return Err(Error::msg("no running container")),
+                };
+
+                let target = format!("ecs:{}_{}_{}", self.cluster, args.task, runtime_id);
+
+                println!("Forwarding to {target}");
+
+                let mut children = Vec::with_capacity(args.port.len());
+                for port in args.port {
+                    let (from, to) = port
+                        .split_once(':')
+                        .ok_or_else(|| Error::msg("invalid port"))?;
+
+                    let child = tokio::process::Command::new("aws")
+                        .arg("ssm")
+                        .arg("start-session")
+                        .arg("--target")
+                        .arg(&target)
+                        .arg("--document-name")
+                        .arg("AWS-StartPortForwardingSessionToRemoteHost")
+                        .arg("--parameters")
+                        .arg(format!(
+                            "{{\"portNumber\":[\"{to}\"], \"localPortNumber\":[\"{from}\"] }}"
+                        ))
+                        .spawn()?;
+
+                    children.push(child);
+                }
+
+                tokio::signal::ctrl_c().await?;
+
+                println!("Shutting down");
+
+                for mut child in children {
+                    child.kill().await?;
+                }
+            }
         }
         Ok(())
     }
@@ -113,6 +174,7 @@ impl Args {
 enum Operation {
     List,
     Get(GetArgs),
+    PortForward(PortForwardArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -129,3 +191,11 @@ enum GetOp {
     Containers,
 }
 
+#[derive(clap::Args, Debug)]
+struct PortForwardArgs {
+    #[clap(long)]
+    task: String,
+
+    #[clap(long)]
+    port: Vec<String>,
+}

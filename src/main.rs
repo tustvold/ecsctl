@@ -1,6 +1,6 @@
 mod cluster;
-mod util;
 mod task;
+mod util;
 
 use anyhow::Result;
 use aws_config::{ConfigLoader, Region};
