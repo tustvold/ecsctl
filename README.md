@@ -27,7 +27,7 @@ $ cargo run -- task --cluster <CLUSTER> list
 ### Show Containers
 
 ```
-$ cargo run -- task --cluster <CLUSTER> get --task <TASK> containers
+$ cargo run -- task --cluster <CLUSTER> containers --task <TASK>
 ```
 
 ### Port Forward Task
